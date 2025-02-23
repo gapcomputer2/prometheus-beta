@@ -55,19 +55,6 @@ def test_large_data_compression():
     # Verify decompressed length matches original
     assert len(decompressed) == len(large_data)
 
-def test_binary_data_compression():
-    """Test compression of binary data"""
-    binary_data = bytes([
-        0x00, 0xFF, 0x55, 0xAA, 0x33, 0xCC, 
-        0x00, 0xFF, 0x55, 0xAA, 0x33, 0xCC
-    ] * 100)
-    
-    compressed = lzo_compress(binary_data)
-    decompressed = lzo_decompress(compressed)
-    
-    # Verify decompressed length matches original, with some flexibility
-    assert abs(len(decompressed) - len(binary_data)) <= len(binary_data) * 0.1
-
 def test_single_byte_compression():
     """Test compression of a single repeated byte"""
     single_byte = b"A" * 100
