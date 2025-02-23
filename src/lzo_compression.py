@@ -29,42 +29,46 @@ def lzo_compress(data):
     # Compression logic
     compressed = bytearray()
     window = bytearray()
+    i = 0
     
-    for byte in data:
-        # Try to find the longest match in the current window
-        match_length = 0
-        match_offset = 0
+    while i < len(data):
+        # Find longest match in the window
+        best_length = 0
+        best_offset = 0
         
-        for i in range(max(0, len(window) - 4096), len(window)):
-            current_match_length = 0
-            j = 0
+        # Search back through the window
+        for j in range(max(0, len(window) - 4096), len(window)):
+            match_length = 0
             
-            # Find longest match
-            while (i + j < len(window) and 
-                   j < len(data) and 
-                   window[i + j] == byte):
-                current_match_length += 1
-                j += 1
+            # Check how long the match continues
+            while (i + match_length < len(data) and 
+                   j + match_length < len(window) and 
+                   data[i + match_length] == window[j + match_length] and 
+                   match_length < 258):  # LZO match length limit
+                match_length += 1
             
-            # Update best match if current match is longer
-            if current_match_length > match_length:
-                match_length = current_match_length
-                match_offset = len(window) - i
+            # Update best match if needed
+            if match_length > best_length:
+                best_length = match_length
+                best_offset = len(window) - j
         
-        # Add byte or match to compressed output
-        if match_length > 2:
-            # Encode match as (offset, length)
+        # Encode the match or literal
+        if best_length >= 3:
+            # Encode match (offset, length)
             compressed.extend([
-                (match_offset >> 8) & 0xFF,  # High byte of offset
-                match_offset & 0xFF,         # Low byte of offset
-                match_length - 3             # Length minus 3 (to save bits)
+                (best_offset >> 8) & 0xFF,  # High byte of offset
+                best_offset & 0xFF,         # Low byte of offset
+                best_length - 3             # Length minus 3
             ])
+            # Move forward in input
+            i += best_length
         else:
             # Literal byte
-            compressed.append(byte)
+            compressed.append(data[i])
+            i += 1
         
         # Update sliding window
-        window.append(byte)
+        window.append(data[max(0, i-1)])
         if len(window) > 4096:
             window = window[-4096:]
     
@@ -96,20 +100,24 @@ def lzo_decompress(compressed_data):
     i = 0
     
     while i < len(compressed_data):
-        # Check if it's a match or literal
+        # Check if there's a potential match
         if i + 2 < len(compressed_data):
-            # Potential match encoding
-            offset = (compressed_data[i] << 8) | compressed_data[i+1]
-            length = compressed_data[i+2] + 3
-            
-            # Check if this looks like a valid match
-            if offset < len(decompressed) and length > 0:
-                # Reconstruct match
+            # Check if this is a match or a literal
+            if compressed_data[i] < 224:  # Magic number for match detection
+                # Decode match
+                offset = (compressed_data[i] << 8) | compressed_data[i+1]
+                length = compressed_data[i+2] + 3
+                
+                # Validate match
                 start = len(decompressed) - offset
-                for j in range(length):
-                    if start + j < 0:
-                        break
-                    decompressed.append(decompressed[start + j])
+                
+                # Protective check to prevent index errors
+                if start >= 0:
+                    for _ in range(length):
+                        if start < len(decompressed):
+                            decompressed.append(decompressed[start])
+                            start += 1
+                
                 i += 3
             else:
                 # Literal byte
