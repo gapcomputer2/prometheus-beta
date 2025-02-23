@@ -29,21 +29,24 @@ def lzo_compress(data):
     i = 0
     
     while i < len(data):
-        # Find repeated bytes
-        repeat_count = 1
-        while (i + repeat_count < len(data) and 
-               data[i] == data[i + repeat_count] and 
-               repeat_count < 255):
-            repeat_count += 1
+        max_repeat = 0
+        repeat_byte = None
         
-        if repeat_count > 2:
+        # Check for repeated sequences
+        for j in range(1, min(256, len(data) - i + 1)):
+            current_window = data[i:i+j]
+            if len(set(current_window)) == 1:
+                max_repeat = j
+                repeat_byte = current_window[0]
+        
+        if max_repeat > 2:
             # Encode repeated bytes
             compressed.extend([
                 0xFF,  # Flag for run-length encoding
-                repeat_count - 1,  # Number of additional repeats
-                data[i]  # The repeated byte
+                max_repeat - 1,  # Number of additional repeats
+                repeat_byte  # The repeated byte
             ])
-            i += repeat_count
+            i += max_repeat
         else:
             # Literal byte
             compressed.append(data[i])
