@@ -29,19 +29,35 @@ def lzo_compress(data):
     i = 0
     
     while i < len(data):
-        # Count repeated bytes
-        repeat_count = 1
-        while i + repeat_count < len(data) and data[i] == data[i + repeat_count] and repeat_count < 255:
-            repeat_count += 1
+        # Look for repeated patterns
+        max_match_length = 0
+        max_match_offset = 0
         
-        if repeat_count > 2:
-            # Encode repeated bytes
+        # Search back in previously processed data
+        search_start = max(0, i - 4096)
+        for j in range(search_start, i):
+            # Try to find the longest matching sequence
+            match_length = 0
+            while (i + match_length < len(data) and 
+                   j + match_length < i and 
+                   data[j + match_length] == data[i + match_length] and 
+                   match_length < 255):
+                match_length += 1
+            
+            # Update best match
+            if match_length > max_match_length:
+                max_match_length = match_length
+                max_match_offset = i - j
+        
+        # Encode based on match length
+        if max_match_length > 2:
+            # Encode as a match (offset, length)
             compressed.extend([
-                0xFF,  # Flag for run-length encoding
-                repeat_count,  # Number of repeats
-                data[i]  # The repeated byte
+                0xFF,  # Flag for match encoding
+                max_match_offset & 0xFF,  # Offset (low byte)
+                max_match_length  # Match length
             ])
-            i += repeat_count
+            i += max_match_length
         else:
             # Literal byte
             compressed.append(data[i])
@@ -75,10 +91,17 @@ def lzo_decompress(compressed_data):
     
     while i < len(compressed_data):
         if i + 2 < len(compressed_data) and compressed_data[i] == 0xFF:
-            # Run-length encoded sequence
-            repeat_count = compressed_data[i + 1]
-            byte_to_repeat = compressed_data[i + 2]
-            decompressed.extend([byte_to_repeat] * repeat_count)
+            # Encoded match
+            offset = compressed_data[i + 1]
+            length = compressed_data[i + 2]
+            
+            # Reconstruct the matched sequence
+            start = len(decompressed) - offset
+            for _ in range(length):
+                if start >= 0 and start < len(decompressed):
+                    decompressed.append(decompressed[start])
+                    start += 1
+            
             i += 3
         else:
             # Literal byte
